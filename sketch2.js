@@ -9,13 +9,15 @@ let uploadBtn, saveBtn;
 let sortedChars = ""; 
 
 function preload() {
-  // 请确保文件名与你的文件匹配
+  // 确保资源路径正确
   img = loadImage('microscope.jpg'); 
   myFont = loadFont('G15_Font.ttf');
 }
 
 function setup() {
-  createCanvas(600, 600);
+  // 开启 SVG 模式实现矢量化
+  // 建议配合 index.html 中的 p5.js v1.4.1 和 p5.svg v1.3.1 使用以确兼容性
+  createCanvas(600, 600, SVG); 
   
   // --- UI 组件创建 ---
   createP('1. Upload Image:');
@@ -24,37 +26,40 @@ function setup() {
   createP('2. Insert Glyphs:');
   charInput = createInput('@#*+=-.'); 
   charInput.size(400);
+  charInput.input(() => { updateSortedChars(); redraw(); });
 
   createP('3. Character Color:');
   let colorDiv = createDiv('');
   rInput = createInput('0'); rInput.size(40); rInput.parent(colorDiv);
-  createSpan(' R ').parent(colorDiv);
   gInput = createInput('0'); gInput.size(40); gInput.parent(colorDiv);
-  createSpan(' G ').parent(colorDiv);
   bInput = createInput('0'); bInput.size(40); bInput.parent(colorDiv);
-  createSpan(' B ').parent(colorDiv);
+  rInput.input(redraw); gInput.input(redraw); bInput.input(redraw);
 
   createP('4. Canvas Width:');
   canvasSlider = createSlider(200, 1200, 600, 10);
+  canvasSlider.input(redraw);
 
   createP('5. Font Size / Spacing / Brightness / Contrast:');
   sizeSlider = createSlider(5, 40, 10, 1);
+  sizeSlider.input(redraw);
   tightSlider = createSlider(0.3, 1.5, 0.7, 0.05);
+  tightSlider.input(redraw);
   brightSlider = createSlider(-100, 100, 0, 1);
+  brightSlider.input(redraw);
   contrastSlider = createSlider(0.5, 3.0, 1.2, 0.1);
+  contrastSlider.input(redraw);
 
   createP('6. Export');
-  saveBtn = createButton('Export Transparent PNG');
-  saveBtn.mousePressed(exportTransparentPNG);
+  saveBtn = createButton('Export Vector SVG');
+  saveBtn.mousePressed(exportVectorSVG);
 
   textFont(myFont);
   textAlign(LEFT, TOP);
   
   updateSortedChars();
-  charInput.input(updateSortedChars);
   
-  // 如果你不希望画面一直闪烁，可以取消下面这行的注释
-  // noLoop(); 
+  // 停止自动循环以防 SVG 渲染导致浏览器崩溃
+  noLoop(); 
 }
 
 function draw() {
@@ -65,6 +70,7 @@ function draw() {
   let targetWidth = canvasSlider.value();
   let aspectRatio = img.height / img.width;
   let targetHeight = targetWidth * aspectRatio;
+  
   if (width !== targetWidth || height !== targetHeight) {
     resizeCanvas(targetWidth, targetHeight);
   }
@@ -78,6 +84,7 @@ function draw() {
   let g = parseInt(gInput.value()) || 0;
   let b = parseInt(bInput.value()) || 0;
   fill(r, g, b);
+  noStroke(); // 确保矢量路径没有多余边框
 
   textSize(charSize);
 
@@ -90,9 +97,7 @@ function draw() {
   tempImg.resize(cols, rows);
   tempImg.loadPixels();
 
-  // 这里的 randomSeed 可以保证每一帧生成的随机分布是固定的，
-  // 除非你移动了滑块。这样画面就不会一直疯狂闪烁。
-  randomSeed(99); 
+  // 移除了 randomSeed(99)，因为现在没有随机逻辑了
 
   for (let y = 0; y < tempImg.height; y++) {
     for (let x = 0; x < tempImg.width; x++) {
@@ -106,24 +111,19 @@ function draw() {
       if (bright > 245) continue; 
 
       if (sortedChars.length > 0) {
-        // --- 随机逻辑核心开始 ---
-        // 1. 先计算目标亮度对应的理想索引
-        let baseIdx = floor(map(bright, 0, 245, 0, sortedChars.length - 1));
-        
-        // 2. 引入随机偏移量。这里范围设为 1，即在 baseIdx 的前后 1 位范围内波动。
-        // 如果你想随机感更强，可以把 1 改成 2 或更大。
-        let offset = floor(random(-1, 2)); 
-        let charIdx = constrain(baseIdx + offset, 0, sortedChars.length - 1);
+        // --- 已修改：回归确定性映射逻辑，与 PNG 版本完全一致 ---
+        let charIdx = floor(map(bright, 0, 245, 0, sortedChars.length - 1));
+        charIdx = constrain(charIdx, 0, sortedChars.length - 1);
         
         text(sortedChars[charIdx], x * stepX, y * stepY);
-        // --- 随机逻辑核心结束 ---
       }
     }
   }
+  console.log("Vector frame rendered.");
 }
 
-function exportTransparentPNG() {
-  saveCanvas('ascii_transparent', 'png');
+function exportVectorSVG() {
+  saveCanvas('ascii_design_vector', 'svg');
 }
 
 function updateSortedChars() {
@@ -135,7 +135,6 @@ function updateSortedChars() {
   let charList = inputVal.split('');
   let weights = [];
   
-  // 临时创建一个图形上下文来测量字符深浅
   for (let c of charList) {
     let pg = createGraphics(40, 40);
     pg.textFont(myFont);
@@ -152,9 +151,6 @@ function updateSortedChars() {
   
   weights.sort((a, b) => b.weight - a.weight);
   sortedChars = weights.map(w => w.char).join('');
-  
-  // 更新字符后重新渲染
-  redraw();
 }
 
 function handleFile(file) {
